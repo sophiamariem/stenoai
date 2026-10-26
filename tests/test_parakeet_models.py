@@ -202,6 +202,7 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
         self.assertIn("SSL_CERT_FILE", joined)
         self.assertIn("REQUESTS_CA_BUNDLE", joined)
         self.assertNotIn("HF_TOKEN", joined)
+        self.assertNotIn("(_ssl.c:1006)", joined)
 
     def test_wrapped_ssl_certificate_error_gets_certificate_guidance(self):
         try:
@@ -212,27 +213,32 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
         self.assertTrue(parakeet_models._is_ssl_certificate_error(error))
 
     def test_huggingface_ssl_warning_survives_generic_final_error(self):
-        def fail_after_warning(model_id, emit):
-            logging.getLogger("huggingface_hub.utils._http").warning(
-                "'[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
-                "unable to get local issuer certificate (_ssl.c:1006)' thrown while requesting HEAD"
-            )
-            raise RuntimeError(
-                "An error happened while trying to locate the file on the Hub "
-                "and we cannot find the requested files in the local cache."
-            )
+        for child in ("huggingface_hub.utils._http", "huggingface_hub.file_download"):
+            with self.subTest(child=child):
+                def fail_after_warning(model_id, emit):
+                    logging.getLogger(child).warning(
+                        "'[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+                        "unable to get local issuer certificate (_ssl.c:1006)' thrown while requesting HEAD"
+                    )
+                    raise RuntimeError("Generic cache lookup failure")
 
-        with patch("src.parakeet_models.is_installed", return_value=False), patch("src.parakeet_models._download_snapshot", side_effect=fail_after_warning), \
-                self.assertLogs("src.parakeet_models", level="ERROR") as cm:
-            ok = parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
+                with patch("src.parakeet_models.is_installed", return_value=False), patch("src.parakeet_models._download_snapshot", side_effect=fail_after_warning), \
+                        self.assertNoLogs("huggingface_hub", level="WARNING"), \
+                        self.assertLogs("src.parakeet_models", level="ERROR") as cm:
+                    ok = parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID)
 
-        self.assertFalse(ok)
-        self.assertEqual(
-            parakeet_models.get_last_download_error(),
-            "TLS certificate verification failed while contacting Hugging Face",
-        )
-        joined = "\n".join(cm.output)
-        self.assertIn("TLS certificate verification failed", joined)
+                self.assertFalse(ok)
+                self.assertEqual(
+                    parakeet_models.get_last_download_error(),
+                    "TLS certificate verification failed while contacting Hugging Face",
+                )
+                joined = "\n".join(cm.output)
+                self.assertIn("TLS certificate verification failed", joined)
+                self.assertNotIn("(_ssl.c:1006)", joined)
+                self.assertNotIn(
+                    parakeet_models._SSL_WARNING_FILTER,
+                    logging.getLogger(child).filters,
+                )
 
     def test_unrelated_error_uses_plain_message(self):
         with patch("src.parakeet_models.is_installed", return_value=True), patch("src.parakeet.ensure_loaded", side_effect=RuntimeError("boom")), \

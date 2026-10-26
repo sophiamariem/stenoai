@@ -65,10 +65,13 @@ def _is_ssl_certificate_error(error: BaseException) -> bool:
 
 
 class _SslCertificateWarningFilter(logging.Filter):
+    """Remember known Hub TLS warnings without emitting their raw text."""
+
     def filter(self, record: logging.LogRecord) -> bool:
         global _SAW_SSL_CERTIFICATE_WARNING
         if _is_ssl_certificate_text(record.getMessage()):
             _SAW_SSL_CERTIFICATE_WARNING = True
+            return False
         return True
 
 
@@ -247,9 +250,13 @@ def download(
         emit = progress_callback or (lambda event: None)
         emit({"stage": "preparing"})
         if not is_installed(model_id):
+            # Logger filters do not see propagated child records. Attach at
+            # the known warning emitters so the raw certificate text is not
+            # emitted while the final error remains a fixed, safe message.
             hub_loggers = (
                 logging.getLogger("huggingface_hub"),
                 logging.getLogger("huggingface_hub.utils._http"),
+                logging.getLogger("huggingface_hub.file_download"),
             )
             for hub_logger in hub_loggers:
                 hub_logger.addFilter(_SSL_WARNING_FILTER)
@@ -295,8 +302,8 @@ def download(
                 "to use the configured CA bundle; if this machine is behind "
                 "a corporate proxy, VPN, or antivirus HTTPS inspection, configure "
                 "SSL_CERT_FILE or REQUESTS_CA_BUNDLE to point at that network's "
-                "root CA bundle. Underlying error: %s",
-                model_id, e,
+                "root CA bundle.",
+                model_id,
             )
         elif masks_http_failure:
             _LAST_DOWNLOAD_ERROR = "Hugging Face fetch did not complete"
