@@ -207,6 +207,30 @@ class ConfigLanguageTests(unittest.TestCase):
             self.assertEqual(config.get_language_name("ru"), "Russian")
             self.assertEqual(config.get_whisper_language(), "ru")
 
+    def test_italian_language_persists_and_keeps_output_name_and_asr_code(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=config_path)
+            self.assertTrue(config.set_language("it"))
+
+            reloaded = Config(config_path=config_path)
+            self.assertEqual(reloaded.get_language(), "it")
+            self.assertEqual(reloaded.get_language_name(), "Italian")
+            self.assertEqual(reloaded.get_whisper_language(), "it")
+
+    def test_cli_accepts_italian_language(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=config_path)
+            with patch("src.config.get_config", return_value=config):
+                result = CliRunner().invoke(simple_recorder.set_language, ["it"])
+
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertEqual(json.loads(result.output), {
+                "success": True, "language": "it", "language_name": "Italian",
+            })
+            self.assertEqual(Config(config_path=config_path).get_language(), "it")
+
     def test_set_language_accepts_auto_detection_mode(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = Config(config_path=Path(tmp_dir) / "config.json")
@@ -318,6 +342,34 @@ class ConfigMicrophoneTests(unittest.TestCase):
             self.assertEqual(
                 config.get_microphone_device(), {"device_id": None, "label": None}
             )
+
+
+class ConfigDiarizationEngineTests(unittest.TestCase):
+    def test_default_diarization_engine_is_sortformer(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            self.assertEqual(config.get_diarization_engine(), "sortformer")
+
+    def test_set_diarization_engine_persists_known_engine(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.json"
+            config = Config(config_path=path)
+            self.assertTrue(config.set_diarization_engine("nemotron3"))
+            self.assertEqual(Config(config_path=path).get_diarization_engine(), "nemotron3")
+            on_disk = json.loads(path.read_text())
+            self.assertEqual(on_disk["diarization_engine"], "nemotron3")
+
+    def test_set_diarization_engine_rejects_unknown_engine(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            self.assertFalse(config.set_diarization_engine("pyannote"))
+            self.assertEqual(config.get_diarization_engine(), "sortformer")
+
+    def test_get_diarization_engine_falls_back_when_stored_value_invalid(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(config_path=Path(tmp_dir) / "config.json")
+            config._config["diarization_engine"] = "NEMOTRON3"
+            self.assertEqual(config.get_diarization_engine(), "sortformer")
 
 
 class ConfigWhisperModelTests(unittest.TestCase):

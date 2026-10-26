@@ -11,6 +11,7 @@ import { streamCache } from '@/lib/meetingDetailState';
 import {
   classifyCompletionNotification,
   meetingAlreadyHasNotes,
+  countActionItems,
   completionActions,
 } from '@/lib/completionNotification';
 import type { Meeting, QueueStatus, RecordingTrigger } from '@/lib/ipc';
@@ -287,6 +288,8 @@ export function useRecording() {
      *  INTO — lets a detail view match by identity rather than the collidable
      *  display name. Null for a fresh new-note recording or when idle. */
     recordingSummaryFile: queue.data?.recordingSummaryFile ?? null,
+    recordingId: queue.data?.recordingId ?? null,
+    chatSummaryFile: queue.data?.chatSummaryFile ?? null,
     /** The real note file the live recording/processing session produces.
      *  useMeetings dedupes the synthetic live row against it so one recording
      *  never shows as two entries (#bug4). Only Parakeet writes the placeholder
@@ -601,6 +604,12 @@ export function useRecordingProcessingEffects() {
                 title,
                 summaryFile: finishedSummaryFile,
                 failed: isFailed,
+                actionItemCount:
+                  data.notesGenerated &&
+                  data.summaryFile &&
+                  data.meetingData?.session_info.summary_file === data.summaryFile
+                  ? countActionItems(data.meetingData?.action_items)
+                  : undefined,
               })
               .catch(() => {
                 // Notification failure isn't fatal — the note is still

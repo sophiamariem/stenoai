@@ -92,8 +92,8 @@ const stenoai = {
     check: () => invoke('startup-setup-check'),
     ollamaAndModel: () => invoke('setup-ollama-and-model'),
     parakeet: () => invoke('setup-parakeet'),
-    speakerModelsStatus: () => invoke('speaker-model-status'),
-    speakerModels: () => invoke('setup-speaker-models'),
+    speakerModelsStatus: (engine) => invoke('speaker-model-status', engine ?? null),
+    speakerModels: (engine) => invoke('setup-speaker-models', engine ?? null),
     test: () => invoke('setup-test'),
     triggerWizard: () => invoke('trigger-setup-wizard'),
   },
@@ -189,6 +189,7 @@ const stenoai = {
 
   query: {
     ask: (file, q) => invoke('query-transcript', file, q),
+    chatContext: (id, request) => send('chat-context-stream', id, request),
     askStream: (id, file, q) => send('query-transcript-stream', id, file, q),
     chatGlobalStream: (id, q, folderId) => send('chat-global-stream', id, q, folderId ?? null),
     cancel: (id) => send('query-cancel', id),
@@ -271,6 +272,11 @@ const stenoai = {
     set: (engine) => invoke('set-transcription-engine', engine),
   },
 
+  diarizationEngine: {
+    get: () => invoke('get-diarization-engine'),
+    set: (engine) => invoke('set-diarization-engine', engine),
+  },
+
   openaiAsr: {
     getConfig: () => invoke('get-openai-asr-config'),
     // cfg may include any subset of { api_url, model } - the key is NOT set
@@ -316,6 +322,7 @@ const stenoai = {
     showNoteReadyNotification: (payload) => invoke('show-note-ready-notification', payload),
     showTranscriptReadyNotification: (payload) => invoke('show-transcript-ready-notification', payload),
     showSystemAudioMicOnlyNotification: () => invoke('show-system-audio-mic-only-notification'),
+    showSystemAudioOnlyNotification: () => invoke('show-system-audio-only-notification'),
     // Design-for-test seam: the production fire path is the main-side scheduler
     // timer; this lets e2e drive the gate + suppression deterministically.
     showPremeetingNotification: (payload) => invoke('show-premeeting-notification', payload),
@@ -404,6 +411,16 @@ const stenoai = {
     chatStream: (streamId, payload) => send('org-chat-stream', streamId, payload),
   },
 
+  // Native macOS share sheet. canShare answers "does a share sheet exist here",
+  // NOT "does the user agent look like a Mac" - the renderer's isMac is a
+  // module-level navigator.platform constant frozen at import, so it can neither
+  // be flipped at runtime nor exercised in both directions by a test.
+  share: {
+    canShare: () => invoke('share-capability'),
+    shareFile: (kind, defaultFilename, payload, anchor) =>
+      invoke('share-note-file', kind, defaultFilename, payload, anchor),
+  },
+
   dialog: {
     respondQuit: (confirmed) => send('quit-dialog-response', { confirmed }),
   },
@@ -433,6 +450,7 @@ const stenoai = {
     parakeetPullProgress: (cb) => subscribe('parakeet-pull-progress', cb),
     parakeetPullComplete: (cb) => subscribe('parakeet-pull-complete', cb),
     setupOllamaProgress: (cb) => subscribe('setup-ollama-progress', cb),
+    speakerModelsProgress: (cb) => subscribe('speaker-models-progress', cb),
     liveTranscriptReady: (cb) => subscribe('live-transcript-ready', cb),
     liveTranscriptChunk: (cb) => subscribe('live-transcript-chunk', cb),
     liveTranscriptError: (cb) => subscribe('live-transcript-error', cb),

@@ -78,6 +78,12 @@ export interface Meeting {
   notes?: string;
   reports?: Report[];
   active_report?: string;
+  /** Sections of this note the user has edited since it was generated, read by
+   *  main from the `_original.json` sidecar (`editedFieldNames`). Always an
+   *  array when it comes from `get-meeting`; optional because the renderer also
+   *  builds synthetic Meeting objects for the live recording. Drives the
+   *  confirm before a regenerate replaces those sections. */
+  edited_fields?: string[];
   /** Synthetic flag set by the renderer for the in-progress recording. Never sent by backend. */
   is_recording?: boolean;
   /** Synthetic flag set by the renderer when a recording is in the processing pipeline (post-stop, pre-summary). */
@@ -122,16 +128,33 @@ export interface CalendarEvent {
   color?: string;
 }
 
+/** A partial update for one meeting note. Every content field below is written
+ *  into its own `## ` section of the .md, leaving the rest of the file
+ *  (transcript included) byte-identical; main rejects any value carrying a
+ *  markdown heading, since that would forge a section boundary. */
 export interface UpdateMeetingPatch {
   name?: string;
   summary?: string;
+  /** Not editable on .md notes yet (the participants editor is a later build);
+   *  still honoured by the legacy .json format. */
   participants?: unknown[];
   key_points?: string[];
-  action_items?: unknown[];
+  action_items?: string[];
+  /** `## Key Topics`: one `### title` subsection per area, analysis below it. */
+  discussion_areas?: { title: string; analysis?: string }[];
   /** The user's own notes (My notes tab). Upserts the `## User Notes` body
    *  section of the .md (or the `user_notes` field of a legacy .json); an
    *  empty string removes the section. */
   user_notes?: string;
+}
+
+export interface ChatRequest {
+  scope: 'live' | 'meeting' | 'notes' | 'general';
+  question: string;
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  recordingId?: string;
+  file?: string;
+  folder?: string | null;
 }
 
 export interface ChatSessionsBlob {
@@ -139,7 +162,8 @@ export interface ChatSessionsBlob {
     id: string;
     name: string;
     summaryFile?: string;
-    messages: Array<{ role: 'user' | 'assistant'; content: string; ts: number }>;
+    scopeFolderId?: string | null;
+    messages: Array<{ role: 'user' | 'assistant'; content: string; ts: number; context?: string }>;
     createdAt: number;
     updatedAt: number;
   }>;
@@ -367,6 +391,8 @@ export type PauseRecordingResponse = Result<{ message: string }>;
 export type ResumeRecordingResponse = Result<{ message: string }>;
 
 export interface QueueStatus {
+  recordingId?: string | null;
+  chatSummaryFile?: string | null;
   success: true;
   isProcessing: boolean;
   queueSize: number;
@@ -404,7 +430,13 @@ export type RecordingsDirResponse = Result<{ path: string }>;
 
 export type ListMeetingsResponse = Result<{ meetings: Meeting[] }>;
 export type GetMeetingResponse = Result<{ meeting: Meeting }>;
-export type UpdateMeetingResponse = Result<{ message: string; updatedData: Meeting }>;
+export type UpdateMeetingResponse = Result<{
+  message: string;
+  updatedData: Meeting;
+  /** Which generated sections the save rewrote. Markdown notes only: empty for
+   *  a title/notes-only save and for the legacy .json format. */
+  edited_fields?: string[];
+}>;
 // Soft-delete (#234): main hides only the summary and returns an `id` + a
 // MAIN-owned `deadline` (epoch ms) so the renderer can offer Undo. `message` is
 // set instead when there was nothing to delete (no summary / already gone).
@@ -709,6 +741,20 @@ export type GetTranscriptionEngineResponse = Result<{
   valid_engines: TranscriptionEngine[];
 }>;
 
+/** macOS speaker-diarization engine (Config.VALID_DIARIZATION_ENGINES). */
+export type DiarizationEngine = 'sortformer' | 'nemotron3';
+
+export type GetDiarizationEngineResponse = Result<{
+  engine: DiarizationEngine;
+  valid_engines: DiarizationEngine[];
+}>;
+
+/** A non-default engine is only saved once its models are ready; otherwise
+ *  the backend answers success: false with models_ready: false. */
+export type SetDiarizationEngineResponse =
+  | { success: true; engine: DiarizationEngine }
+  | { success: false; error: string; error_code?: string; models_ready?: false };
+
 export type GetOpenAiAsrConfigResponse = Result<{
   api_url: string;
   api_key_set: boolean;
@@ -927,6 +973,17 @@ export interface ParakeetPullProgressEvent {
   completed_files?: number;
   total_files?: number;
   file_bytes?: number;
+  /** Exact bytes from the Hub's file metadata; absent when that lookup failed. */
+  downloaded_bytes?: number;
+  total_bytes?: number;
+}
+/** Speaker-diarization model download ('setup-speaker-models'). While
+ *  `downloading`, percent is the measured share of the model download; once
+ *  `compiling` (CoreML optimising for this Mac, then the small embedding
+ *  models) there is nothing to measure. Phase only ever moves forward. */
+export interface SpeakerModelsProgressEvent {
+  percent: number;
+  phase: 'listing' | 'downloading' | 'compiling';
 }
 export interface ParakeetPullCompleteEvent {
   model?: string | null;
@@ -1049,8 +1106,9 @@ export interface StenoaiBridge {
     check: RequestFn<[], SetupCheckResponse>;
     ollamaAndModel: RequestFn<[], Result<Record<string, unknown>>>;
     parakeet: RequestFn<[], Result<Record<string, unknown>>>;
-    speakerModelsStatus: RequestFn<[], SpeakerModelStatusResponse>;
-    speakerModels: RequestFn<[], SpeakerModelStatusResponse>;
+    /** Without an engine, reports/prepares the saved diarization engine's models. */
+    speakerModelsStatus: RequestFn<[engine?: DiarizationEngine], SpeakerModelStatusResponse>;
+    speakerModels: RequestFn<[engine?: DiarizationEngine], SpeakerModelStatusResponse>;
     test: RequestFn<[], Result<Record<string, unknown>>>;
     triggerWizard: RequestFn<[], Result<Record<string, unknown>>>;
   };
@@ -1174,6 +1232,7 @@ export interface StenoaiBridge {
 
   query: {
     ask: RequestFn<[file: string, q: string], QueryResponse>;
+    chatContext: SendFn<[id: string, request: ChatRequest]>;
     askStream: SendFn<[id: string, file: string, q: string]>;
     chatGlobalStream: SendFn<[id: string, q: string, folderId?: string | null]>;
     cancel: SendFn<[id: string]>;
@@ -1263,6 +1322,11 @@ export interface StenoaiBridge {
     set: RequestFn<[engine: TranscriptionEngine], Result<{ engine: TranscriptionEngine }>>;
   };
 
+  diarizationEngine: {
+    get: RequestFn<[], GetDiarizationEngineResponse>;
+    set: RequestFn<[engine: DiarizationEngine], SetDiarizationEngineResponse>;
+  };
+
   openaiAsr: {
     getConfig: RequestFn<[], GetOpenAiAsrConfigResponse>;
     setConfig: RequestFn<
@@ -1314,6 +1378,9 @@ export interface StenoaiBridge {
     /** Fired when an enabled loopback acquisition genuinely fails; not fired
      *  for the toggle-off or OS-unsupported cases. */
     showSystemAudioMicOnlyNotification: RequestFn<[], Result<Record<string, never>>>;
+    /** Fired when a recording starts with no audio input device and continues
+     *  on system audio alone (#517). */
+    showSystemAudioOnlyNotification: RequestFn<[], Result<Record<string, never>>>;
     showNoteReadyNotification: RequestFn<
       [
         payload: {
@@ -1321,6 +1388,7 @@ export interface StenoaiBridge {
           failed?: boolean;
           hardFailure?: boolean;
           summaryFile?: string | null;
+          actionItemCount?: number;
         },
       ],
       Result<Record<string, never>>
@@ -1426,6 +1494,7 @@ export interface StenoaiBridge {
     parakeetPullProgress: Subscribe<ParakeetPullProgressEvent>;
     parakeetPullComplete: Subscribe<ParakeetPullCompleteEvent>;
     setupOllamaProgress: Subscribe<SetupOllamaProgressEvent>;
+    speakerModelsProgress: Subscribe<SpeakerModelsProgressEvent>;
     liveTranscriptReady: Subscribe<LiveTranscriptReadyEvent>;
     liveTranscriptChunk: Subscribe<LiveTranscriptChunkEvent>;
     liveTranscriptError: Subscribe<LiveTranscriptErrorEvent>;
@@ -1491,6 +1560,27 @@ export interface StenoaiBridge {
     tryAutoBackup: RequestFn<[payload: OrgTryAutoBackupPayload], OrgTryAutoBackupResponse>;
     aiChat: RequestFn<[payload: OrgChatPayload], OrgChatResponse>;
     chatStream: SendFn<[streamId: string, payload: OrgChatPayload]>;
+  };
+
+  share: {
+    /** Whether a native share sheet exists on this machine (macOS only). Treat
+     *  an unresolved query as false so the entries never flash in before the
+     *  capability is known. */
+    canShare: RequestFn<[], boolean>;
+    /** Write the payload into the managed share temp directory and pop the
+     *  native sheet on it. `kind: 'pdf'` takes HTML and rasterises it first;
+     *  `'text'` is written as UTF-8. `anchor` is a point in window coordinates
+     *  so the sheet pops from the clicked entry. `success` means only that the
+     *  sheet opened - the destination is never reported back. */
+    shareFile: RequestFn<
+      [
+        kind: 'pdf' | 'text',
+        defaultFilename: string,
+        payload: string,
+        anchor: { x: number; y: number },
+      ],
+      Result<Record<string, never>>
+    >;
   };
 
   dialog: {

@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/electron';
+import { openShareMenu } from '../fixtures/share-menu';
 
 const summaryFile = 'pending_summary.md';
 
@@ -28,7 +29,11 @@ for (const scenario of [
     }, { code: scenario.code, stream: Boolean(scenario.stream), file: summaryFile });
     const alert = page.getByRole('alert');
     await expect(alert).toContainText(scenario.message);
-    await expect(page.getByRole('button', { name: 'Copy transcript' })).toBeVisible();
+    // The transcript stays reachable from the Share menu while notes failed.
+    const failedMenu = await openShareMenu(page);
+    await expect(failedMenu.getByRole('button', { name: 'Copy transcript' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(failedMenu).toBeHidden();
     await expect(alert.getByRole('button', { name: 'Generate notes', exact: true })).toBeEnabled();
     await expect(page.getByText('Unfinished synthetic summary', { exact: true })).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('internal.invalid');
@@ -43,7 +48,8 @@ for (const scenario of [
     }, summaryFile);
     await expect(alert).toHaveCount(0);
     await expect(page.getByTestId('generate-notes-dock-button')).toBeEnabled();
-    await expect(page.getByRole('button', { name: 'Copy transcript' })).toBeVisible();
+    const menu = await openShareMenu(page);
+    await expect(menu.getByRole('button', { name: 'Copy transcript' })).toBeVisible();
   });
 }
 
@@ -76,3 +82,40 @@ test('failed regeneration keeps the existing summary visible and My notes usable
   await page.getByRole('tab', { name: 'My notes', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'My notes', exact: true })).toHaveAttribute('aria-selected', 'true');
 });
+
+for (const scenario of [
+  { code: 'retranscribe_unlinked_segments', message: 'This note was continued in an earlier version of Steno' },
+  { code: 'retranscribe_no_audio', message: 'is no longer on this computer, so it cannot be transcribed again' },
+]) {
+  test(`a re-transcribe refusal (${scenario.code}) explains itself and offers no regenerate`, async ({ launchApp }) => {
+    const { app, page } = await launchApp({
+      mockIpc: true,
+      env: {
+        STENOAI_E2E_SEED_STALE_NOTE: '1',
+        STENOAI_E2E_REPROCESS_PENDING: '1',
+        STENOAI_E2E_RECORDING_AVAILABLE: '1',
+      },
+    });
+    await page.evaluate(() => { window.location.hash = '#/meetings/stale_summary.md'; });
+    await expect(page.getByText('Covers only the first segment.', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'More options' }).click();
+    await page.getByTestId('retranscribe-action').click();
+    await page.getByRole('button', { name: 'Re-transcribe', exact: true }).click();
+    await expect.poll(() => app.evaluate(() => (globalThis as any).__reprocessTest.calls)).toBe(1);
+    // It must be a re-transcribe, not an ordinary regenerate.
+    expect(await app.evaluate(() => (globalThis as any).__stenoaiE2eReprocessCalls.map((c: any) => c.retranscribe)))
+      .toEqual([true]);
+    await app.evaluate((_electron, code) => {
+      (globalThis as any).__reprocessTest.finish({ success: false, error: 'Synthetic failure', error_code: code });
+    }, scenario.code);
+
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText('Note wasn’t transcribed again');
+    await expect(alert).toContainText(scenario.message);
+    await expect(alert).not.toContainText('Notes weren’t generated');
+    // The note was not touched, so regenerating its notes is no remedy.
+    await expect(alert.getByRole('button', { name: 'Generate notes', exact: true })).toHaveCount(0);
+    await expect(page.getByText('Covers only the first segment.', { exact: true })).toBeVisible();
+  });
+}

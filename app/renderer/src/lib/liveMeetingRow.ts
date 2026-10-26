@@ -4,8 +4,18 @@
  */
 
 /** Sentinel summary_file path used by the synthetic in-progress recording row.
- *  Never matches a real meeting file. Consumers detect via `meeting.is_recording`. */
+ *  Never matches a real meeting file. Detect the row with `isLiveRowFile`, not
+ *  `is_recording`/`is_processing`: a real note being reprocessed is flagged
+ *  `is_processing` too. */
 export const LIVE_SUMMARY_PREFIX = '__live__/';
+
+/** Is this the synthetic in-progress row rather than a note on disk? Not the
+ *  same as `is_recording || is_processing`: useMeetings also flags a real note
+ *  `is_processing` while it is reprocessed, and that note still has its own
+ *  time, title and file. */
+export function isLiveRowFile(summaryFile: string): boolean {
+  return summaryFile.startsWith(LIVE_SUMMARY_PREFIX);
+}
 
 /** The recording statuses that mean a session is genuinely under way, and so
  *  earn the synthetic live row. Everything else ('idle') does not.
