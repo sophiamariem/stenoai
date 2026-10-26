@@ -8383,7 +8383,8 @@ ipcMain.handle('setup-ollama-and-model', async () => {
 function describeParakeetDownloadError(raw) {
   const text = String(raw || '');
   if (/CERTIFICATE_VERIFY_FAILED|unable to get local issuer certificate|TLS certificate verification failed/i.test(text)) {
-    const reason = text.includes('(certificate expired)') ? ' The certificate has expired.'
+    const reason = text.includes('(certificate is not yet valid)') ? ' The certificate is not yet valid. Check this computer’s date and time.'
+      : text.includes('(certificate expired)') ? ' The certificate has expired.'
       : text.includes('(certificate hostname mismatch)') ? ' The certificate does not match the server name.'
         : text.includes('(certificate issuer is not trusted)') ? ' The certificate issuer is not trusted.' : '';
     return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate.'

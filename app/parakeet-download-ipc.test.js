@@ -102,6 +102,7 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
     });
   }
   for (const [reason, expected] of [
+    ['certificate is not yet valid', /certificate is not yet valid.*date and time/],
     ['certificate expired', /certificate has expired/],
     ['certificate hostname mismatch', /certificate does not match the server name/],
     ['certificate issuer is not trusted', /certificate issuer is not trusted/],

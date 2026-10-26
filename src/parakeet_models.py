@@ -71,6 +71,7 @@ def _ssl_certificate_reason(error: BaseException) -> str | None:
     it in the download error or log, even when a client wraps the SSL error.
     """
     reasons = {
+        9: "certificate is not yet valid",
         10: "certificate expired",
         62: "certificate hostname mismatch",
         18: "certificate issuer is not trusted",

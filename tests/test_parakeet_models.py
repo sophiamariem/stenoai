@@ -208,6 +208,7 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
     def test_structured_certificate_reasons_are_fixed_and_private(self):
         secret = "https://user:secret@example.test/private-ca.pem"
         for code, expected in (
+            (9, "certificate is not yet valid"),
             (10, "certificate expired"),
             (62, "certificate hostname mismatch"),
             (20, "certificate issuer is not trusted"),
