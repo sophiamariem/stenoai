@@ -64,6 +64,31 @@ def _is_ssl_certificate_error(error: BaseException) -> bool:
     return False
 
 
+def _ssl_certificate_reason(error: BaseException) -> str | None:
+    """Return only a fixed reason from OpenSSL's structured verify code.
+
+    Exception text can contain request URLs and local CA paths. Never include
+    it in the download error or log, even when a client wraps the SSL error.
+    """
+    reasons = {
+        10: "certificate expired",
+        62: "certificate hostname mismatch",
+        18: "certificate issuer is not trusted",
+        19: "certificate issuer is not trusted",
+        20: "certificate issuer is not trusted",
+        21: "certificate issuer is not trusted",
+        27: "certificate issuer is not trusted",
+    }
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return reasons.get(getattr(current, "verify_code", None))
+        current = current.__cause__ or current.__context__
+    return None
+
+
 class _SslCertificateWarningFilter(logging.Filter):
     """Remember known Hub TLS warnings without emitting their raw text."""
 
@@ -295,15 +320,18 @@ def download(
         # likely culprits instead of parroting the bogus local path.
         masks_http_failure = isinstance(e, FileNotFoundError) and model_id in str(e)
         if _is_ssl_certificate_error(e) or _SAW_SSL_CERTIFICATE_WARNING:
+            reason = _ssl_certificate_reason(e)
             _LAST_DOWNLOAD_ERROR = "TLS certificate verification failed while contacting Hugging Face"
+            if reason:
+                _LAST_DOWNLOAD_ERROR += f" ({reason})"
             logger.error(
                 "Parakeet model download failed for %s: TLS certificate "
-                "verification failed while contacting Hugging Face. Steno tried "
-                "to use the configured CA bundle; if this machine is behind "
-                "a corporate proxy, VPN, or antivirus HTTPS inspection, configure "
-                "SSL_CERT_FILE or REQUESTS_CA_BUNDLE to point at that network's "
-                "root CA bundle.",
-                model_id,
+                "verification failed while contacting Hugging Face%s. Check "
+                "certificate validity and hostname. If HTTPS inspection is "
+                "used, configure an explicit CA override in Steno's start "
+                "environment: SSL_CERT_FILE, SSL_CERT_DIR, or "
+                "REQUESTS_CA_BUNDLE.",
+                model_id, f" ({reason})" if reason else "",
             )
         elif masks_http_failure:
             _LAST_DOWNLOAD_ERROR = "Hugging Face fetch did not complete"

@@ -87,8 +87,28 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
     assert.match(result.error, /could not verify Hugging Face/i);
     assert.match(result.error, /this computer/i);
     assert.match(result.error, /corporate VPN, proxy, or antivirus/i);
-    assert.match(result.error, /SSL_CERT_FILE \/ REQUESTS_CA_BUNDLE/);
-    assert.match(result.error, /PEM bundle containing the network’s root/);
+    assert.match(result.error, /SSL_CERT_FILE or REQUESTS_CA_BUNDLE/);
+    assert.match(result.error, /SSL_CERT_DIR with an OpenSSL-compatible CA directory/);
+    assert.match(result.error, /suitable PEM bundle/);
+    assert.match(result.error, /start environment before launch/);
+    assert.match(result.error, /shell export is not inherited.*Finder/);
     assert.doesNotMatch(result.error, /system trust store/);
   });
+  for (const [reason, expected] of [
+    ['certificate expired', /certificate has expired/],
+    ['certificate hostname mismatch', /certificate does not match the server name/],
+    ['certificate issuer is not trusted', /certificate issuer is not trusted/],
+  ]) {
+    test(`${channel}: fixed ${reason} reason is shown without raw details`, async () => {
+      const { proc, promise } = start();
+      proc.stdout.emit('data', Buffer.from(JSON.stringify({
+        success: false,
+        error: `TLS certificate verification failed while contacting Hugging Face (${reason}); private=https://user:secret@example.test`,
+      }) + '\n'));
+      proc.emit('close', 0);
+      const result = await promise;
+      assert.match(result.error, expected);
+      assert.doesNotMatch(result.error, /user:secret/);
+    });
+  }
 }

@@ -18,6 +18,12 @@ CA_KEYS = ("SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE")
 
 
 class TlsBootstrapTests(unittest.TestCase):
+    def _require_clients(self, *names):
+        try:
+            return tuple(importlib.import_module(name) for name in names)
+        except ImportError as error:
+            self.skipTest(f"Client dependency unavailable: {error.name}")
+
     def setUp(self):
         self._saved_env = {key: os.environ.get(key) for key in CA_KEYS}
 
@@ -67,8 +73,7 @@ class TlsBootstrapTests(unittest.TestCase):
             self.assertEqual(os.environ["REQUESTS_CA_BUNDLE"], custom)
 
     def test_explicit_requests_ca_directory_selects_ssl_cert_dir(self):
-        import httpx
-        import requests
+        httpx, requests = self._require_clients("httpx", "requests")
 
         with tempfile.TemporaryDirectory() as tmp:
             os.environ.pop("SSL_CERT_FILE", None)
@@ -85,8 +90,7 @@ class TlsBootstrapTests(unittest.TestCase):
             )["verify"], tmp)
 
     def test_explicit_ssl_cert_dir_is_not_overridden_by_certifi(self):
-        import httpx
-        import requests
+        httpx, requests = self._require_clients("httpx", "requests")
 
         with tempfile.TemporaryDirectory() as tmp:
             os.environ.pop("SSL_CERT_FILE", None)
@@ -104,7 +108,7 @@ class TlsBootstrapTests(unittest.TestCase):
             )["verify"], tmp)
 
     def test_missing_explicit_requests_ca_fails_closed_for_httpx(self):
-        import httpx
+        (httpx,) = self._require_clients("httpx")
 
         with tempfile.TemporaryDirectory() as tmp:
             missing = str(Path(tmp) / "missing-ca.pem")
@@ -118,7 +122,7 @@ class TlsBootstrapTests(unittest.TestCase):
                 httpx.create_ssl_context()
 
     def test_missing_explicit_ssl_dir_is_not_replaced_with_certifi(self):
-        import httpx
+        (httpx,) = self._require_clients("httpx")
 
         with tempfile.TemporaryDirectory() as tmp:
             missing = str(Path(tmp) / "missing-ca-dir")
@@ -170,11 +174,7 @@ class TlsBootstrapTests(unittest.TestCase):
     def test_httpx_and_requests_use_explicit_ca_without_network(self):
         # HF Hub 1.x uses HTTPX; older Hub uses Requests. Check each client's
         # local CA selection without contacting Hugging Face.
-        try:
-            import httpx
-            import requests
-        except ImportError:
-            self.skipTest("HTTPX and Requests are needed for client contract check")
+        httpx, requests = self._require_clients("httpx", "requests")
         with tempfile.TemporaryDirectory() as tmp:
             custom = Path(tmp) / "operator.pem"
             custom.write_bytes(Path(certifi.where()).read_bytes())

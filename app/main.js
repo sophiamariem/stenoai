@@ -8383,7 +8383,12 @@ ipcMain.handle('setup-ollama-and-model', async () => {
 function describeParakeetDownloadError(raw) {
   const text = String(raw || '');
   if (/CERTIFICATE_VERIFY_FAILED|unable to get local issuer certificate|TLS certificate verification failed/i.test(text)) {
-    return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate. Steno uses its bundled public CA bundle unless a CA file is explicitly configured. On a corporate VPN, proxy, or antivirus HTTPS inspection network, configure SSL_CERT_FILE / REQUESTS_CA_BUNDLE with a PEM bundle containing the network’s root and any required public roots.';
+    const reason = text.includes('(certificate expired)') ? ' The certificate has expired.'
+      : text.includes('(certificate hostname mismatch)') ? ' The certificate does not match the server name.'
+        : text.includes('(certificate issuer is not trusted)') ? ' The certificate issuer is not trusted.' : '';
+    return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate.'
+      + reason
+      + ' Steno uses its bundled public CA bundle unless an explicit CA override is configured. Check the certificate’s validity and server name. If a corporate VPN, proxy, or antivirus inspects HTTPS, configure SSL_CERT_FILE or REQUESTS_CA_BUNDLE with a suitable PEM bundle, or SSL_CERT_DIR with an OpenSSL-compatible CA directory containing that network’s root and any required public roots. These variables must be in Steno’s start environment before launch; a shell export is not inherited when Steno is opened from Finder.';
   }
   return text || 'Download failed';
 }

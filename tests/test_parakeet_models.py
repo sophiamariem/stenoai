@@ -198,11 +198,39 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
         self.assertFalse(ok)
         joined = "\n".join(cm.output)
         self.assertIn("TLS certificate verification failed", joined)
-        self.assertIn("configured CA bundle", joined)
+        self.assertIn("Check certificate validity and hostname", joined)
         self.assertIn("SSL_CERT_FILE", joined)
+        self.assertIn("SSL_CERT_DIR", joined)
         self.assertIn("REQUESTS_CA_BUNDLE", joined)
         self.assertNotIn("HF_TOKEN", joined)
         self.assertNotIn("(_ssl.c:1006)", joined)
+
+    def test_structured_certificate_reasons_are_fixed_and_private(self):
+        secret = "https://user:secret@example.test/private-ca.pem"
+        for code, expected in (
+            (10, "certificate expired"),
+            (62, "certificate hostname mismatch"),
+            (20, "certificate issuer is not trusted"),
+            (999, None),
+        ):
+            with self.subTest(code=code):
+                cause = ssl.SSLCertVerificationError(f"private diagnostic {secret}")
+                cause.verify_code = code
+                error = RuntimeError(f"wrapped request {secret}")
+                error.__cause__ = cause
+                with patch("src.parakeet_models.is_installed", return_value=False), \
+                        patch("src.parakeet_models._download_snapshot", side_effect=error), \
+                        self.assertLogs("src.parakeet_models", level="ERROR") as cm:
+                    self.assertFalse(parakeet_models.download(parakeet_models.DEFAULT_MODEL_ID))
+                output = "\n".join(cm.output)
+                last_error = parakeet_models.get_last_download_error()
+                if expected:
+                    self.assertIn(expected, output)
+                    self.assertIn(expected, last_error)
+                else:
+                    self.assertEqual(last_error, "TLS certificate verification failed while contacting Hugging Face")
+                self.assertNotIn(secret, output)
+                self.assertNotIn(secret, last_error)
 
     def test_wrapped_ssl_certificate_error_gets_certificate_guidance(self):
         try:
