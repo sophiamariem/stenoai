@@ -198,6 +198,7 @@ class DownloadErrorSurfacingTests(unittest.TestCase):
         self.assertFalse(ok)
         joined = "\n".join(cm.output)
         self.assertIn("TLS certificate verification failed", joined)
+        self.assertIn("configured CA bundle", joined)
         self.assertIn("SSL_CERT_FILE", joined)
         self.assertIn("REQUESTS_CA_BUNDLE", joined)
         self.assertNotIn("HF_TOKEN", joined)

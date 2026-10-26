@@ -88,5 +88,7 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
     assert.match(result.error, /this computer/i);
     assert.match(result.error, /corporate VPN, proxy, or antivirus/i);
     assert.match(result.error, /SSL_CERT_FILE \/ REQUESTS_CA_BUNDLE/);
+    assert.match(result.error, /PEM bundle containing the network’s root/);
+    assert.doesNotMatch(result.error, /system trust store/);
   });
 }

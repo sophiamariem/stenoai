@@ -43,10 +43,10 @@ if sys.platform == "win32":
     except (AttributeError, OSError):
         pass
 
-# Wire stdlib SSL up to certifi's CA bundle before anything tries to make
-# an HTTPS call. PyInstaller's compiled-in cert paths don't exist on a
-# customer's Mac, so without this the adapter request in summarizer.py
-# fails with CERTIFICATE_VERIFY_FAILED.
+# Wire stdlib SSL up to an explicit operator CA or certifi before any HTTPS
+# call. PyInstaller's compiled-in cert paths may not exist on a customer
+# machine, so the adapter request in summarizer.py could otherwise fail with
+# CERTIFICATE_VERIFY_FAILED.
 from src import tls_bootstrap  # noqa: F401
 
 # Import modules with graceful fallback for missing dependencies

@@ -8383,7 +8383,7 @@ ipcMain.handle('setup-ollama-and-model', async () => {
 function describeParakeetDownloadError(raw) {
   const text = String(raw || '');
   if (/CERTIFICATE_VERIFY_FAILED|unable to get local issuer certificate|TLS certificate verification failed/i.test(text)) {
-    return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate. Steno uses its bundled certificate store automatically; if you are on a corporate VPN, proxy, or antivirus HTTPS inspection network, add that network’s root certificate to the system trust store or set SSL_CERT_FILE / REQUESTS_CA_BUNDLE to its CA bundle.';
+    return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate. Steno uses its bundled public CA bundle unless a CA file is explicitly configured. On a corporate VPN, proxy, or antivirus HTTPS inspection network, configure SSL_CERT_FILE / REQUESTS_CA_BUNDLE with a PEM bundle containing the network’s root and any required public roots.';
   }
   return text || 'Download failed';
 }

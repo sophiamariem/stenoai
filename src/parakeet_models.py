@@ -34,7 +34,7 @@ def get_last_download_error() -> str | None:
 
 
 def _configure_tls_for_huggingface() -> None:
-    """Apply the bundled certifi CA bundle before Hugging Face opens HTTPS.
+    """Apply the explicit CA choice or certifi before Hugging Face opens HTTPS.
 
     ``simple_recorder.py`` imports ``src.tls_bootstrap`` at CLI startup, but this
     module is also usable directly from tests and future entrypoints. Keep the
@@ -292,7 +292,7 @@ def download(
             logger.error(
                 "Parakeet model download failed for %s: TLS certificate "
                 "verification failed while contacting Hugging Face. Steno tried "
-                "to use the bundled certifi CA bundle; if this machine is behind "
+                "to use the configured CA bundle; if this machine is behind "
                 "a corporate proxy, VPN, or antivirus HTTPS inspection, configure "
                 "SSL_CERT_FILE or REQUESTS_CA_BUNDLE to point at that network's "
                 "root CA bundle. Underlying error: %s",
