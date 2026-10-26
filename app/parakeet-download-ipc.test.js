@@ -43,7 +43,7 @@ test('registration extraction tolerates indentation and nested callbacks', () =>
 });
 
 for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
-  function start() {
+  function start(platform = 'darwin') {
     let handler;
     const proc = new EventEmitter();
     proc.stdout = new EventEmitter();
@@ -55,6 +55,7 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
         ipcMain: { handle: (_, fn) => { handler = fn; } },
         spawn: () => proc, getBackendPath: () => '/synthetic/backend', getBackendCwd: () => '/synthetic',
         makeLineReader, sendDebugLog: () => {}, setTimeout, clearTimeout,
+        process: { platform },
         mainWindow: { isDestroyed: () => false, webContents: { send: (name, data) => events.push([name, data]) } },
       },
     );
@@ -78,22 +79,28 @@ for (const channel of ['setup-parakeet', 'pull-parakeet-model']) {
       assert.equal((await promise).success, false);
     });
   }
-  test(`${channel}: SSL certificate failures are actionable in app UI`, async () => {
-    const { proc, promise } = start();
-    proc.stdout.emit('data', Buffer.from('{"success":false,"error":"[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)"}\n'));
-    proc.emit('close', 0);
-    const result = await promise;
-    assert.equal(result.success, false);
-    assert.match(result.error, /could not verify Hugging Face/i);
-    assert.match(result.error, /this computer/i);
-    assert.match(result.error, /corporate VPN, proxy, or antivirus/i);
-    assert.match(result.error, /SSL_CERT_FILE or REQUESTS_CA_BUNDLE/);
-    assert.match(result.error, /SSL_CERT_DIR with an OpenSSL-compatible CA directory/);
-    assert.match(result.error, /suitable PEM bundle/);
-    assert.match(result.error, /start environment before launch/);
-    assert.match(result.error, /shell export is not inherited.*Finder/);
-    assert.doesNotMatch(result.error, /system trust store/);
-  });
+  for (const platform of ['darwin', 'win32', 'linux']) {
+    test(`${channel}: SSL guidance is accurate on ${platform}`, async () => {
+      const { proc, promise } = start(platform);
+      proc.stdout.emit('data', Buffer.from('{"success":false,"error":"[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)"}\n'));
+      proc.emit('close', 0);
+      const result = await promise;
+      assert.equal(result.success, false);
+      assert.match(result.error, /could not verify Hugging Face/i);
+      assert.match(result.error, /this computer/i);
+      assert.match(result.error, /corporate VPN, proxy, or antivirus/i);
+      assert.match(result.error, /SSL_CERT_FILE or REQUESTS_CA_BUNDLE/);
+      assert.match(result.error, /SSL_CERT_DIR with an OpenSSL-compatible CA directory/);
+      assert.match(result.error, /suitable PEM bundle/);
+      assert.match(result.error, /start environment before launch/);
+      if (platform === 'darwin') {
+        assert.match(result.error, /shell export is not inherited.*Finder/);
+      } else {
+        assert.doesNotMatch(result.error, /Finder/);
+      }
+      assert.doesNotMatch(result.error, /system trust store/);
+    });
+  }
   for (const [reason, expected] of [
     ['certificate expired', /certificate has expired/],
     ['certificate hostname mismatch', /certificate does not match the server name/],

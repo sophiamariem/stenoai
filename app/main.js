@@ -8388,7 +8388,8 @@ function describeParakeetDownloadError(raw) {
         : text.includes('(certificate issuer is not trusted)') ? ' The certificate issuer is not trusted.' : '';
     return 'Parakeet model download failed because this computer could not verify Hugging Face’s certificate.'
       + reason
-      + ' Steno uses its bundled public CA bundle unless an explicit CA override is configured. Check the certificate’s validity and server name. If a corporate VPN, proxy, or antivirus inspects HTTPS, configure SSL_CERT_FILE or REQUESTS_CA_BUNDLE with a suitable PEM bundle, or SSL_CERT_DIR with an OpenSSL-compatible CA directory containing that network’s root and any required public roots. These variables must be in Steno’s start environment before launch; a shell export is not inherited when Steno is opened from Finder.';
+      + ' Steno uses its bundled public CA bundle unless an explicit CA override is configured. Check the certificate’s validity and server name. If a corporate VPN, proxy, or antivirus inspects HTTPS, configure SSL_CERT_FILE or REQUESTS_CA_BUNDLE with a suitable PEM bundle, or SSL_CERT_DIR with an OpenSSL-compatible CA directory containing that network’s root and any required public roots. These variables must be in Steno’s start environment before launch.'
+      + (process.platform === 'darwin' ? ' A shell export is not inherited when Steno is opened from Finder.' : '');
   }
   return text || 'Download failed';
 }
